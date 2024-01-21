@@ -20,8 +20,6 @@ INDENT = 4
 #OUTPUT_FILE = "/home/atis/work/pull/contiki-ng/examples/on-board-rf/exported-rf.c"
 OUTPUT_FILE = "./exported-rf.c"
 
-# TODO: run for the different options of trees, using a grid-search
-NUM_TREES = 50
 
 class RfState(State):
     def train_rf(self, indexes):
@@ -35,48 +33,52 @@ class RfState(State):
       
         n_iter = 100
 
+        import pandas
         import scipy.stats
+        import numpy
         # Spaces to search for hyperparameters
-        parameter_distributions = {
-            #'min_samples_leaf': scipy.stats.loguniform(0.0000001, 0.001),
-            #'max_depth': scipy.stats.randint(5, 20),
-            'max_depth': scipy.stats.randint(5, 30),
+        hyperparameters = {
+            'n_estimators': [ 5, 10 ],
+            #'max_depth': [ 9 ],
+            #'max_depth': numpy.arange(5, 20, 1),
+            "max_features": numpy.linspace(0.30, 0.90, 10),
+            'min_samples_split': scipy.stats.loguniform(0.0001, 0.1).rvs(size=20),
         }
 
         # use balanced weigths to account for class imbalance
         # (we're trying to optimize f1 score, not accuracy)
-        base = RandomForestClassifier(n_estimators=NUM_TREES,
-                                     random_state = 0, n_jobs=1,
+        base = RandomForestClassifier(random_state = 0, n_jobs=1,
+                                     #max_features=int(14*0.70),
                                      class_weight = "balanced")
 
         from emlearn.evaluate.trees import model_size_bytes
-        from sklearn.model_selection import RandomizedSearchCV
+        from sklearn.model_selection import GridSearchCV
         f1_micro = make_scorer(f1_score, average="micro")
 
-
-        search = RandomizedSearchCV(
+        search = GridSearchCV(
             base,
-            param_distributions=parameter_distributions,
+            param_grid=hyperparameters,
             scoring={
                 # our predictive model metric
                 'f1_micro': f1_micro,
                 # metrics for the model costs
-                #'size': model_size_bytes,
+                'size': model_size_bytes,
             },
             refit='f1_micro',
-            n_iter=n_iter,
             cv=5,
             return_train_score=True,
             n_jobs=4,
-            verbose=1,
+            verbose=2,
         )
 
 
         search.fit(features_train, self.train_y)
         clf = search.best_estimator_
 
-        import pandas
+
         results = pandas.DataFrame(search.cv_results_)
+        print('c', results.columns)
+
         results.to_parquet('hyperparam_results.parquet')
 
         # check the results on the validation set
