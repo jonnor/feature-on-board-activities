@@ -3,7 +3,7 @@ import numpy as np
 
 import utils
 
-PAMAP2 = "/home/atis/work/feature-group-selection/datasets/PAMAP2"
+PAMAP2 = "../feature-group-selection/datasets/PAMAP2"
 #PAMAP2 = "/home/atis/work/on-board/PAMAP2_Dataset/"
 
 
@@ -59,7 +59,7 @@ class State:
         self.validation, self.validation_y = self.load_subset("validation")
         self.test, self.test_y = self.load_subset("test")
 
-        filename = os.path.join("..", "feature_names.csv")
+        filename = os.path.join("../feature-group-selection", "feature_names.csv")
         self.names = utils.read_list_of_features(filename)
         self.simple_names = [u[1] for u in self.names]
 

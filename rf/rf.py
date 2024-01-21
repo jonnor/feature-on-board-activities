@@ -7,22 +7,21 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.simplefilter(action='ignore', category=DeprecationWarning)
 
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, make_scorer
 from sklearn.tree import _tree
 
 # import the local copy of `sklearn_porter`
 import sys
-sys.path.append("/home/atis/work/on-board/sklearn-porter/")
-from sklearn_porter import Porter
 
 from ml_state import State
 import utils
 
 INDENT = 4
 #OUTPUT_FILE = "/home/atis/work/pull/contiki-ng/examples/on-board-rf/exported-rf.c"
-OUTPUT_FILE = "/home/atis/source/zephyrproject/zephyr/samples/on-board-rf/src/exported-rf.c"
+OUTPUT_FILE = "./exported-rf.c"
 
-NUM_TREES = 100
+# TODO: run for the different options of trees, using a grid-search
+NUM_TREES = 50
 
 class RfState(State):
     def train_rf(self, indexes):
@@ -34,13 +33,51 @@ class RfState(State):
         features_validation = self.validation[:,self.selector]
         features_test = self.test[:,self.selector]
       
+        n_iter = 100
+
+        import scipy.stats
+        # Spaces to search for hyperparameters
+        parameter_distributions = {
+            #'min_samples_leaf': scipy.stats.loguniform(0.0000001, 0.001),
+            #'max_depth': scipy.stats.randint(5, 20),
+            'max_depth': scipy.stats.randint(5, 30),
+        }
+
         # use balanced weigths to account for class imbalance
         # (we're trying to optimize f1 score, not accuracy)
-        clf = RandomForestClassifier(n_estimators = NUM_TREES,
-                                     max_depth=9,
-                                     random_state = 0,
+        base = RandomForestClassifier(n_estimators=NUM_TREES,
+                                     random_state = 0, n_jobs=1,
                                      class_weight = "balanced")
-        clf.fit(features_train, self.train_y)
+
+        from emlearn.evaluate.trees import model_size_bytes
+        from sklearn.model_selection import RandomizedSearchCV
+        f1_micro = make_scorer(f1_score, average="micro")
+
+
+        search = RandomizedSearchCV(
+            base,
+            param_distributions=parameter_distributions,
+            scoring={
+                # our predictive model metric
+                'f1_micro': f1_micro,
+                # metrics for the model costs
+                #'size': model_size_bytes,
+            },
+            refit='f1_micro',
+            n_iter=n_iter,
+            cv=5,
+            return_train_score=True,
+            n_jobs=4,
+            verbose=1,
+        )
+
+
+        search.fit(features_train, self.train_y)
+        clf = search.best_estimator_
+
+        import pandas
+        results = pandas.DataFrame(search.cv_results_)
+        results.to_parquet('hyperparam_results.parquet')
 
         # check the results on the validation set
         hypothesis = clf.predict(features_validation)
